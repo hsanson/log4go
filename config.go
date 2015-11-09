@@ -170,9 +170,6 @@ func strToNumSuffix(str string, mult int) int {
 func xmlToFileLogWriter(filename string, props []xmlProperty, enabled bool) (*FileLogWriter, bool) {
 	file := ""
 	format := "[%D %T] [%L] (%S) %M"
-	maxlines := 0
-	maxsize := 0
-	daily := false
 	rotate := false
 
 	// Parse properties
@@ -182,12 +179,6 @@ func xmlToFileLogWriter(filename string, props []xmlProperty, enabled bool) (*Fi
 			file = strings.Trim(prop.Value, " \r\n")
 		case "format":
 			format = strings.Trim(prop.Value, " \r\n")
-		case "maxlines":
-			maxlines = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1000)
-		case "maxsize":
-			maxsize = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1024)
-		case "daily":
-			daily = strings.Trim(prop.Value, " \r\n") != "false"
 		case "rotate":
 			rotate = strings.Trim(prop.Value, " \r\n") != "false"
 		default:
@@ -208,17 +199,11 @@ func xmlToFileLogWriter(filename string, props []xmlProperty, enabled bool) (*Fi
 
 	flw := NewFileLogWriter(file, rotate)
 	flw.SetFormat(format)
-	flw.SetRotateLines(maxlines)
-	flw.SetRotateSize(maxsize)
-	flw.SetRotateDaily(daily)
 	return flw, true
 }
 
 func xmlToXMLLogWriter(filename string, props []xmlProperty, enabled bool) (*FileLogWriter, bool) {
 	file := ""
-	maxrecords := 0
-	maxsize := 0
-	daily := false
 	rotate := false
 
 	// Parse properties
@@ -226,12 +211,6 @@ func xmlToXMLLogWriter(filename string, props []xmlProperty, enabled bool) (*Fil
 		switch prop.Name {
 		case "filename":
 			file = strings.Trim(prop.Value, " \r\n")
-		case "maxrecords":
-			maxrecords = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1000)
-		case "maxsize":
-			maxsize = strToNumSuffix(strings.Trim(prop.Value, " \r\n"), 1024)
-		case "daily":
-			daily = strings.Trim(prop.Value, " \r\n") != "false"
 		case "rotate":
 			rotate = strings.Trim(prop.Value, " \r\n") != "false"
 		default:
@@ -251,9 +230,6 @@ func xmlToXMLLogWriter(filename string, props []xmlProperty, enabled bool) (*Fil
 	}
 
 	xlw := NewXMLLogWriter(file, rotate)
-	xlw.SetRotateLines(maxrecords)
-	xlw.SetRotateSize(maxsize)
-	xlw.SetRotateDaily(daily)
 	return xlw, true
 }
 

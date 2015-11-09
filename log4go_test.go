@@ -156,8 +156,58 @@ func TestXMLLogWriter(t *testing.T) {
 
 	if contents, err := ioutil.ReadFile(testLogFile); err != nil {
 		t.Errorf("read(%q): %s", testLogFile, err)
-	} else if len(contents) != 185 {
+	} else if len(contents) != 232 {
 		t.Errorf("malformed xmllog: %q (%d bytes)", string(contents), len(contents))
+	}
+}
+
+func TestLogRotation(t *testing.T) {
+	defer func(buflen int) {
+		LogBufferLength = buflen
+	}(LogBufferLength)
+	LogBufferLength = 0
+
+	w := NewFileLogWriter(testLogFile, true)
+	if w == nil {
+		t.Fatalf("Invalid return: w should not be nil")
+	}
+
+  now := time.Now()
+  old := now.Add(-26*time.Hour)
+  oldLogFile := testLogFile + "-" + old.Format("2006-01-02")
+
+	defer os.Remove(testLogFile)
+  defer os.Remove(oldLogFile)
+
+	w.LogWrite(newLogRecord(CRITICAL, "source", "message1"))
+
+	if _, err := os.Stat(testLogFile); os.IsNotExist(err) {
+    t.Errorf("Log file %s does not exists", testLogFile)
+    return
+  }
+
+  w.setOpenDate(old)
+
+	w.LogWrite(newLogRecord(CRITICAL, "source", "message"))
+
+	w.Close()
+	runtime.Gosched()
+
+	if _, err := os.Stat(oldLogFile); os.IsNotExist(err) {
+    t.Errorf("Log file %s does not exists", oldLogFile)
+    return
+  }
+
+	if contents, err := ioutil.ReadFile(testLogFile); err != nil {
+		t.Errorf("read(%q): %s", testLogFile, err)
+	} else if len(contents) != 50 {
+		t.Errorf("malformed filelog: %q (%d bytes)", string(contents), len(contents))
+	}
+
+	if contents, err := ioutil.ReadFile(oldLogFile); err != nil {
+		t.Errorf("read(%q): %s", testLogFile, err)
+	} else if len(contents) != 51 {
+		t.Errorf("malformed filelog: %q (%d bytes)", string(contents), len(contents))
 	}
 }
 
@@ -336,9 +386,6 @@ func TestXMLConfig(t *testing.T) {
 	fmt.Fprintln(fd, "    -->")
 	fmt.Fprintln(fd, "    <property name=\"format\">[%D %T] [%L] (%S) %M</property>")
 	fmt.Fprintln(fd, "    <property name=\"rotate\">false</property> <!-- true enables log rotation, otherwise append -->")
-	fmt.Fprintln(fd, "    <property name=\"maxsize\">0M</property> <!-- \\d+[KMG]? Suffixes are in terms of 2**10 -->")
-	fmt.Fprintln(fd, "    <property name=\"maxlines\">0K</property> <!-- \\d+[KMG]? Suffixes are in terms of thousands -->")
-	fmt.Fprintln(fd, "    <property name=\"daily\">true</property> <!-- Automatically rotates when a log message is written after midnight -->")
 	fmt.Fprintln(fd, "  </filter>")
 	fmt.Fprintln(fd, "  <filter enabled=\"true\">")
 	fmt.Fprintln(fd, "    <tag>xmllog</tag>")
@@ -346,9 +393,6 @@ func TestXMLConfig(t *testing.T) {
 	fmt.Fprintln(fd, "    <level>TRACE</level>")
 	fmt.Fprintln(fd, "    <property name=\"filename\">trace.xml</property>")
 	fmt.Fprintln(fd, "    <property name=\"rotate\">true</property> <!-- true enables log rotation, otherwise append -->")
-	fmt.Fprintln(fd, "    <property name=\"maxsize\">100M</property> <!-- \\d+[KMG]? Suffixes are in terms of 2**10 -->")
-	fmt.Fprintln(fd, "    <property name=\"maxrecords\">6K</property> <!-- \\d+[KMG]? Suffixes are in terms of thousands -->")
-	fmt.Fprintln(fd, "    <property name=\"daily\">false</property> <!-- Automatically rotates when a log message is written after midnight -->")
 	fmt.Fprintln(fd, "  </filter>")
 	fmt.Fprintln(fd, "  <filter enabled=\"false\"><!-- enabled=false means this logger won't actually be created -->")
 	fmt.Fprintln(fd, "    <tag>donotopen</tag>")

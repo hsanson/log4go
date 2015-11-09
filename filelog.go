@@ -23,17 +23,11 @@ type FileLogWriter struct {
 	// File header/trailer
 	header, trailer string
 
-	// Rotate at linecount
-	maxlines          int
 	maxlines_curlines int
-
-	// Rotate at size
-	maxsize         int
-	maxsize_cursize int
 
 	// Rotate daily
 	daily          bool
-	daily_opendate int
+	daily_opendate time.Time
 
 	// Keep old logfiles (.001, .002, etc)
 	rotate bool
@@ -88,29 +82,24 @@ func NewFileLogWriter(fname string, rotate bool) *FileLogWriter {
 					return
 				}
 			case rec, ok := <-w.rec:
+
 				if !ok {
 					return
 				}
-				now := time.Now()
-				if (w.maxlines > 0 && w.maxlines_curlines >= w.maxlines) ||
-					(w.maxsize > 0 && w.maxsize_cursize >= w.maxsize) ||
-					(w.daily && now.Day() != w.daily_opendate) {
-					if err := w.intRotate(); err != nil {
-						fmt.Fprintf(os.Stderr, "FileLogWriter(%q): %s\n", w.filename, err)
-						return
-					}
+
+				if err := w.intRotate(); err != nil {
+					fmt.Fprintf(os.Stderr, "FileLogWriter(%q): %s\n", w.filename, err)
+					return
 				}
 
 				// Perform the write
-				n, err := fmt.Fprint(w.file, FormatLogRecord(w.format, rec))
+				_, err := fmt.Fprint(w.file, FormatLogRecord(w.format, rec))
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "FileLogWriter(%q): %s\n", w.filename, err)
 					return
 				}
 
-				// Update the counts
 				w.maxlines_curlines++
-				w.maxsize_cursize += n
 			}
 		}
 	}()
@@ -125,6 +114,9 @@ func (w *FileLogWriter) Rotate() {
 
 // If this is called in a threaded context, it MUST be synchronized
 func (w *FileLogWriter) intRotate() error {
+
+	now := time.Now()
+
 	// Close any log file that may be open
 	if w.file != nil {
 		fmt.Fprint(w.file, FormatLogRecord(w.trailer, &LogRecord{Created: time.Now()}))
@@ -132,20 +124,11 @@ func (w *FileLogWriter) intRotate() error {
 	}
 
 	// If we are keeping log files, move it to the next available number
-	if w.rotate {
-		_, err := os.Lstat(w.filename)
-		if err == nil { // file exists
-			// Find the next available number
-			num := 1
-			fname := ""
-			for ; err == nil && num <= 999; num++ {
-				fname = w.filename + fmt.Sprintf(".%03d", num)
-				_, err = os.Lstat(fname)
-			}
-			// return error if the last file checked still existed
-			if err == nil {
-				return fmt.Errorf("Rotate: Cannot find free log number to rename %s\n", w.filename)
-			}
+	_, err := os.Lstat(w.filename)
+	if err == nil { // file exists
+
+		if w.rotate && now.Day() != w.daily_opendate.Day() {
+			fname := w.filename + "-" + w.daily_opendate.Format("2006-01-02")
 
 			// Rename the file to its newfound home
 			err = os.Rename(w.filename, fname)
@@ -157,22 +140,29 @@ func (w *FileLogWriter) intRotate() error {
 
 	// Open the log file
 	fd, err := os.OpenFile(w.filename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+
 	if err != nil {
 		return err
 	}
+
 	w.file = fd
 
-	now := time.Now()
 	fmt.Fprint(w.file, FormatLogRecord(w.header, &LogRecord{Created: now}))
 
 	// Set the daily open date to the current date
-	w.daily_opendate = now.Day()
-
-	// initialize rotation values
-	w.maxlines_curlines = 0
-	w.maxsize_cursize = 0
+	w.daily_opendate = now
 
 	return nil
+}
+
+// Change the last rotation time.
+// This allows to change the latest rotation time for unit testing.
+func (w *FileLogWriter) setOpenDate(now time.Time) {
+	w.daily_opendate = now;
+}
+
+func (w *FileLogWriter) getOpenDate() time.Time {
+	return w.daily_opendate
 }
 
 // Set the logging format (chainable).  Must be called before the first log
@@ -190,30 +180,6 @@ func (w *FileLogWriter) SetHeadFoot(head, foot string) *FileLogWriter {
 	if w.maxlines_curlines == 0 {
 		fmt.Fprint(w.file, FormatLogRecord(w.header, &LogRecord{Created: time.Now()}))
 	}
-	return w
-}
-
-// Set rotate at linecount (chainable). Must be called before the first log
-// message is written.
-func (w *FileLogWriter) SetRotateLines(maxlines int) *FileLogWriter {
-	//fmt.Fprintf(os.Stderr, "FileLogWriter.SetRotateLines: %v\n", maxlines)
-	w.maxlines = maxlines
-	return w
-}
-
-// Set rotate at size (chainable). Must be called before the first log message
-// is written.
-func (w *FileLogWriter) SetRotateSize(maxsize int) *FileLogWriter {
-	//fmt.Fprintf(os.Stderr, "FileLogWriter.SetRotateSize: %v\n", maxsize)
-	w.maxsize = maxsize
-	return w
-}
-
-// Set rotate daily (chainable). Must be called before the first log message is
-// written.
-func (w *FileLogWriter) SetRotateDaily(daily bool) *FileLogWriter {
-	//fmt.Fprintf(os.Stderr, "FileLogWriter.SetRotateDaily: %v\n", daily)
-	w.daily = daily
 	return w
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"path/filepath"
 	"os"
 	"runtime"
 	"testing"
@@ -161,12 +162,61 @@ func TestXMLLogWriter(t *testing.T) {
 	}
 }
 
+// Re-starting the fupd daemon should not cause log rotation to run. Log output
+// should continue in the already existing log file.
+func TestLogFirstRunRotation(t *testing.T) {
+	defer func(buflen int) {
+		LogBufferLength = buflen
+	}(LogBufferLength)
+	LogBufferLength = 0
+
+	// Open a new log file with rotation enabled.
+	w := NewFileLogWriter(testLogFile, true)
+	if w == nil {
+		t.Fatalf("Invalid return: w should not be nil")
+	}
+
+	defer os.Remove(testLogFile)
+
+	// Write a single message
+	w.LogWrite(newLogRecord(CRITICAL, "source", "message"))
+
+	// Close the logfile to simulate daemon stopped.
+	w.Close()
+
+	files, _ := filepath.Glob(testLogFile +	"*")
+
+	if(len(files) != 1) {
+		t.Errorf("There should be only one log file but there are %d", len(files))
+	}
+
+	// Open the log again to simulate daemon restart
+	w = NewFileLogWriter(testLogFile, true)
+	if w == nil {
+		t.Fatalf("Invalid return: w should not be nil")
+	}
+
+	// Write a single message
+	w.LogWrite(newLogRecord(CRITICAL, "source", "message"))
+
+	// Close the log again
+	w.Close()
+
+	files, _ = filepath.Glob(testLogFile +	"*")
+
+	if(len(files) != 1) {
+		t.Errorf("There should be only one log file but there are %d", len(files))
+	}
+
+}
+
 func TestLogRotation(t *testing.T) {
 	defer func(buflen int) {
 		LogBufferLength = buflen
 	}(LogBufferLength)
 	LogBufferLength = 0
 
+	// Open a new log file with rotation enabled.
 	w := NewFileLogWriter(testLogFile, true)
 	if w == nil {
 		t.Fatalf("Invalid return: w should not be nil")
@@ -177,33 +227,40 @@ func TestLogRotation(t *testing.T) {
   oldLogFile := testLogFile + "-" + old.Format("2006-01-02")
 
 	defer os.Remove(testLogFile)
-  defer os.Remove(oldLogFile)
 
 	w.LogWrite(newLogRecord(CRITICAL, "source", "message1"))
 
-	if _, err := os.Stat(testLogFile); os.IsNotExist(err) {
-    t.Errorf("Log file %s does not exists", testLogFile)
-    return
-  }
+  defer os.Remove(oldLogFile)
 
+	// Set the opendate to yesterday to simulate one day passed.
   w.setOpenDate(old)
 
+	// Write a new log entry. This should cause the log rotation to kick.
 	w.LogWrite(newLogRecord(CRITICAL, "source", "message"))
 
 	w.Close()
 	runtime.Gosched()
 
+	// The current log should be present
+	if _, err := os.Stat(testLogFile); os.IsNotExist(err) {
+    t.Errorf("Log file %s does not exists", testLogFile)
+    return
+  }
+
+	// There should be an old (rotated) log file
 	if _, err := os.Stat(oldLogFile); os.IsNotExist(err) {
     t.Errorf("Log file %s does not exists", oldLogFile)
     return
   }
 
+	// Check the contents of the current log is correct
 	if contents, err := ioutil.ReadFile(testLogFile); err != nil {
 		t.Errorf("read(%q): %s", testLogFile, err)
 	} else if len(contents) != 50 {
 		t.Errorf("malformed filelog: %q (%d bytes)", string(contents), len(contents))
 	}
 
+	// Check the contents of the rotated log is correct
 	if contents, err := ioutil.ReadFile(oldLogFile); err != nil {
 		t.Errorf("read(%q): %s", testLogFile, err)
 	} else if len(contents) != 51 {

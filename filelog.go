@@ -58,6 +58,7 @@ func NewFileLogWriter(fname string, rotate bool) *FileLogWriter {
 		filename: fname,
 		format:   "[%D %T] [%L] (%S) %M",
 		rotate:   rotate,
+		daily_opendate: time.Now(),
 	}
 
 	// open the file for the first time
